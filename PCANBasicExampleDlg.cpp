@@ -2350,7 +2350,7 @@ void CPCANBasicExampleDlg::OnEnKillfocusTxtparamdevnumber()
     // Compute new edited value
     //
     if(isDeviceId)
-        sscanf(txtParameterDevNumber.GetBuffer(), "%X", &newValue);
+        sscanf_s(txtParameterDevNumber.GetBuffer(), "%X", &newValue);
     else
         newValue = atoi(txtParameterDevNumber);
 
