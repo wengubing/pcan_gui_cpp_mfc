@@ -188,6 +188,18 @@ int CPCANBasicExampleApp::RunSelfTest()
     else
         SelfTestPrint("[3] Selection  : handle %02Xh (%s)", selected, selectedIsFD ? "FD" : "classic");
 
+    memset(version, 0, sizeof(version));
+    if (pcan.GetValue(selected, PCAN_CHANNEL_VERSION, version, sizeof(version)) == PCAN_ERROR_OK)
+    {
+        CString driver(version);
+        driver.Replace("\n", " | ");
+        SelfTestPrint("[3] Driver     : %s", (LPCSTR)driver);
+    }
+
+    memset(version, 0, sizeof(version));
+    if (pcan.GetValue(selected, PCAN_HARDWARE_NAME, version, sizeof(version)) == PCAN_ERROR_OK)
+        SelfTestPrint("[3] Hardware   : %s", version);
+
     DWORD condition = 0;
     if (pcan.GetValue(selected, PCAN_CHANNEL_CONDITION, &condition, sizeof(condition)) == PCAN_ERROR_OK)
         SelfTestPrint("[3] Condition  : %u (%s)", condition,
