@@ -74,6 +74,10 @@ private:
     //Load flag
     bool m_bWasLoaded;
 
+    // Suppresses the modal error dialogs (needed for headless/console usage)
+    //
+    bool m_bSilent;
+
     // Load the PCANBasic API
     //
     void LoadAPI();
@@ -97,10 +101,16 @@ private:
 public:
     // PCANBasicClass constructor
     //
-    PCANBasicClass();
+    // silent: when true, no MessageBox is shown if the DLL/API cannot be loaded
+    //
+    PCANBasicClass(bool silent = false);
     // PCANBasicClass destructor
     //
     ~PCANBasicClass();
+
+    // Returns true when the PCANBasic API was completely loaded
+    //
+    bool IsLoaded();
 
     /// <summary>
     /// Initializes a PCAN Channel

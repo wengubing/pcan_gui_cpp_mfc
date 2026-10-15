@@ -22,8 +22,18 @@ public:
 // Overrides
     public:
     virtual BOOL InitInstance();
+    virtual int ExitInstance();
 
 // Implementation
+
+    // Headless (no GUI) self-test, started with the "--selftest" command line switch.
+    // Optional switches: "--handle=<hex>" (force a PCAN channel), "--fd" (use CAN-FD),
+    // "--wait=<ms>" (read window, default 1000).
+    //
+    int RunSelfTest();
+
+    bool m_SelfTestMode;    // true when running without GUI
+    int m_SelfTestResult;   // process exit code of the self-test
 
     DECLARE_MESSAGE_MAP()
 };

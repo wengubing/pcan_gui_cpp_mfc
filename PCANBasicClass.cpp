@@ -1,12 +1,13 @@
 #include "stdafx.h"
 #include "PCANBasicClass.h"
 
-PCANBasicClass::PCANBasicClass()
+PCANBasicClass::PCANBasicClass(bool silent)
 {
     //Init members
     //
     m_bWasLoaded = false;
     m_hDll = NULL;
+    m_bSilent = silent;
 
     // Loads the API
     //
@@ -30,7 +31,8 @@ void PCANBasicClass::LoadAPI()
     //
     if(!LoadDllHandle())
     {
-        ::MessageBox(NULL, "Error: \"Unable to find the DLL PCANBasic.dll!\"", "Error!", MB_ICONERROR);
+        if (!m_bSilent)
+            ::MessageBox(NULL, "Error: \"Unable to find the DLL PCANBasic.dll!\"", "Error!", MB_ICONERROR);
         return;
     }
 
@@ -58,7 +60,13 @@ void PCANBasicClass::LoadAPI()
     // If the API was not loaded (Wrong version), an error message is shown.
     //
     if (!m_bWasLoaded)
-        ::MessageBox(NULL, "Error: \"DLL functions could not be loaded!\"", "Error!", MB_ICONERROR);
+        if (!m_bSilent)
+            ::MessageBox(NULL, "Error: \"DLL functions could not be loaded!\"", "Error!", MB_ICONERROR);
+}
+
+bool PCANBasicClass::IsLoaded()
+{
+    return m_bWasLoaded;
 }
 
 void PCANBasicClass::UnloadAPI()
