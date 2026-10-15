@@ -63,5 +63,7 @@
     <None Include="res\PCANBasicExampleIcon.ico">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include=".github\upgrades\scenarios\cppbuildtoolsupgrade\scenario-instructions.md" />
+    <None Include=".github\upgrades\scenarios\cppbuildtoolsupgrade\assessment.md" />
   </ItemGroup>
 </Project>
