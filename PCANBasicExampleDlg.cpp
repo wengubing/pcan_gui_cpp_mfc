@@ -347,6 +347,7 @@ CPCANBasicExampleDlg::CPCANBasicExampleDlg(CWnd* pParent)
 , txtBitrate(_T(""))
 {
     m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
+    m_MenuSpaceAdded = false;
 }
 
 void CPCANBasicExampleDlg::DoDataExchange(CDataExchange* pDX)
@@ -646,8 +647,155 @@ ON_WM_PAINT()
     ON_LBN_DBLCLK(IDC_LISTINFO, &CPCANBasicExampleDlg::OnLbnDblclkListinfo)
     ON_BN_CLICKED(IDC_CHBFD, &CPCANBasicExampleDlg::OnBnClickedChbfd)
     ON_BN_CLICKED(IDC_CHBBRS, &CPCANBasicExampleDlg::OnBnClickedChbbrs)
+    ON_COMMAND(ID_MENU_LANG_ZH, &CPCANBasicExampleDlg::OnLanguageChinese)
+    ON_COMMAND(ID_MENU_LANG_EN, &CPCANBasicExampleDlg::OnLanguageEnglish)
+    ON_COMMAND(ID_MENU_ABOUT, &CPCANBasicExampleDlg::OnMenuAbout)
+    ON_COMMAND(ID_MENU_EXIT, &CPCANBasicExampleDlg::OnMenuExit)
     END_MESSAGE_MAP()
 
+
+#pragma region Language support (Chinese / English)
+// Supported languages
+//
+#define LANG_ZH 0
+#define LANG_EN 1
+
+// Currently selected language. It is stored in the registry so that the
+// example starts with the language that was used the last time.
+//
+static int g_nLanguage = LANG_ZH;
+
+// Returns the text that corresponds to the current language
+//
+static LPCSTR LT(LPCSTR chinese, LPCSTR english)
+{
+    return (g_nLanguage == LANG_ZH) ? chinese : english;
+}
+
+// Text of every translatable control: control id, Chinese text, English text
+//
+struct LANGUAGE_TEXT
+{
+    UINT nID;
+    LPCSTR pszChinese;
+    LPCSTR pszEnglish;
+};
+
+static LANGUAGE_TEXT g_LanguageTexts[] =
+{
+    // Group boxes
+    { IDC_GB_CONNECTION,       "连接",             "Connection" },
+    { IDC_GB_FILTER,           "报文过滤",         "Message Filtering" },
+    { IDC_GB_PARAMETERS,       "配置参数",         "Configuration Paramaters" },
+    { IDC_GB_READ,             "报文接收",         "Messages Reading" },
+    { IDC_GB_WRITE,            "报文发送",         "Write Messages" },
+    { IDC_GB_INFORMATION,      "信息",             "Information" },
+    // Connection
+    { IDC_LA_HARDWARE,         "硬件:",            "Hardware:" },
+    { IDC_LABAUDRATE,          "波特率:",          "Baudrate:" },
+    { IDC_LABITRATE,           "比特率:",          "Bit rate:" },
+    { IDC_LAHWTYPE,            "硬件类型:",        "Hardware Type:" },
+    { IDC_LAIOPORT,            "I/O 端口:",        "I/O Port:" },
+    { IDC_LAINTERRUPT,         "中断:",            "Interrupt:" },
+    { IDC_BUTTON_HWREFRESH,    "刷新",             "Refresh" },
+    { IDC_CHBCANFD,            "CAN-FD",           "CAN-FD" },
+    { IDC_BTNINIT,             "初始化",           "Initialize" },
+    { IDC_BTNRELEASE,          "释放",             "Release" },
+    // Message filtering
+    { IDC_CHBFILTEREXTENDED,   "扩展帧",           "Extended Frame" },
+    { IDC_RADIOFILTEROPEN,     "打开",             "Open" },
+    { IDC_RADIOFILTERCLOSE,    "关闭",             "Close" },
+    { IDC_RADIOFILTERCUSTOM,   "自定义（扩展）",   "Custom (expand)" },
+    { IDC_LA_FROM,             "起始 (Hex):",      "From (Hex):" },
+    { IDC_LA_TO,               "结束 (Hex):",      "To (Hex):" },
+    { IDC_BUTTONFILTERAPPLY,   "应用",             "Apply" },
+    { IDC_BUTTONFILTERQUERY,   "查询",             "Query" },
+    // Configuration parameters
+    { IDC_LA_PARAMETER,        "参数:",            "Parameter:" },
+    { IDC_LA_ACTIVATION,       "启用状态:",        "Activation:" },
+    { IDC_RADIOPARAMACTIVE,    "启用",             "Active" },
+    { IDC_RADIOPARAMINACTIVE,  "禁用",             "Inactive" },
+    { IDC_LA_DEVICEORDELAY,    "设备 ID (Hex):",   "Device ID (Hex):" },
+    { IDC_BUTTONPARAMSET,      "设置",             "Set" },
+    { IDC_BUTTONPARAMGET,      "读取",             "Get" },
+    // Reading
+    { IDC_RDBTIMER,            "定时器读取",       "Reading Using Timer" },
+    { IDC_RDBEVENT,            "事件读取",         "Reading Using Event" },
+    { IDC_RDBMANUAL,           "手动读取",         "Manual Read" },
+    { IDC_CHBTIMESTAMP,        "时间戳显示为周期", "Time Stamp As Period" },
+    { IDC_BUTTONREAD,          "读取",             "Read" },
+    { IDC_BUTTONREADINGCLEAR,  "清空",             "Clear" },
+    // Writing
+    { IDC_LA_ID,               "ID (Hex):",        "ID (Hex):" },
+    { IDC_LA_DLC,              "DLC:",             "DLC:" },
+    { IDC_LA_DATA,             "数据:",            "Data:" },
+    { IDC_LA_LENGTHLABEL,      "长度:",            "Length:" },
+    { IDC_LALENGTH,            "8 字节",           "8 B." },
+    { IDC_CHBEXTENDED,         "扩展帧",           "Extended" },
+    { IDC_CHBREMOTE,           "远程帧",           "RTR" },
+    { IDC_CHBFD,               "FD",               "FD" },
+    { IDC_CHBBRS,              "BRS",              "BRS" },
+    { IDC_BTNWRITE,            "发送",             "Write" },
+    // Information
+    { IDC_BUTTONVERSION,       "版本",             "Version" },
+    { IDC_BUTTONINFOCLEAR,     "清空",             "Clear" },
+    { IDC_BUTTONSTATUS,        "状态",             "Status" },
+    { IDC_BUTTONRESET,         "复位",             "Reset" },
+};
+
+#pragma endregion
+
+#pragma region About dialog
+// Simple About box. Its text is set according to the current language.
+//
+class CAboutDlg : public CDialog
+{
+public:
+    CAboutDlg(CWnd* pParent = NULL)
+        : CDialog(IDD_DIALOG_ABOUT, pParent)
+    {
+    }
+
+protected:
+    virtual BOOL OnInitDialog();
+
+    DECLARE_MESSAGE_MAP()
+};
+
+BEGIN_MESSAGE_MAP(CAboutDlg, CDialog)
+END_MESSAGE_MAP()
+
+BOOL CAboutDlg::OnInitDialog()
+{
+    CDialog::OnInitDialog();
+
+    CString text;
+
+    SetWindowText(LT("关于", "About"));
+    SetDlgItemText(IDC_ABOUT_NAME, LT("PCAN-Basic 示例", "PCAN-Basic Example"));
+    SetDlgItemText(IDC_ABOUT_VERSION, LT("版本 4.0.1", "Version 4.0.1"));
+
+    // Ask the PCAN-Basic API for its own version
+    //
+    text = LT("PCAN-Basic API: 不可用", "PCAN-Basic API: not available");
+    PCANBasicClass pcan(true);
+    if (pcan.IsLoaded())
+    {
+        char version[256];
+        memset(version, 0, sizeof(version));
+        if (pcan.GetValue(PCAN_NONEBUS, PCAN_API_VERSION, version, sizeof(version)) == PCAN_ERROR_OK)
+            text.Format("%s%s", LT("PCAN-Basic API: ", "PCAN-Basic API: "), version);
+    }
+    SetDlgItemText(IDC_ABOUT_API, text);
+
+    SetDlgItemText(IDC_ABOUT_COPYRIGHT,
+        LT("版权所有 (C) 1999-2021 PEAK-System Technik GmbH",
+           "Copyright (C) 1999-2021 PEAK-System Technik GmbH"));
+    GetDlgItem(IDOK)->SetWindowText(LT("确定", "OK"));
+
+    return TRUE;
+}
+#pragma endregion
 
 // PCANBasicExampleDlg message handlers
 //
@@ -663,7 +811,145 @@ BOOL CPCANBasicExampleDlg::OnInitDialog()
     // Extra initialization here
     InitializeControls();
 
+    // Restore the language of the last session, create the menu bar and
+    // translate the whole dialog
+    //
+    g_nLanguage = AfxGetApp()->GetProfileInt("Settings", "Language", LANG_ZH);
+    ApplyLanguage();
+    EnsureMenuSpace();
+
     return TRUE;  // return TRUE  unless you set the focus to a control
+}
+
+// Creates (or re-creates) the menu bar of the dialog using the current language
+//
+void CPCANBasicExampleDlg::BuildMenu()
+{
+    if (m_Menu.GetSafeHmenu() != NULL)
+    {
+        SetMenu(NULL);
+        m_Menu.DestroyMenu();
+    }
+
+    m_Menu.CreateMenu();
+
+    // "Language" popup: 中文 / English
+    //
+    CMenu popLanguage;
+    popLanguage.CreatePopupMenu();
+    popLanguage.AppendMenu(MF_STRING, ID_MENU_LANG_ZH, "中文(&C)");
+    popLanguage.AppendMenu(MF_STRING, ID_MENU_LANG_EN, "English(&E)");
+    popLanguage.CheckMenuRadioItem(ID_MENU_LANG_ZH, ID_MENU_LANG_EN,
+        (g_nLanguage == LANG_EN) ? ID_MENU_LANG_EN : ID_MENU_LANG_ZH, MF_BYCOMMAND);
+
+    // "Help" popup: About / Exit
+    //
+    CMenu popHelp;
+    popHelp.CreatePopupMenu();
+    popHelp.AppendMenu(MF_STRING, ID_MENU_ABOUT, LT("关于(&A)...", "About(&A)..."));
+    popHelp.AppendMenu(MF_SEPARATOR);
+    popHelp.AppendMenu(MF_STRING, ID_MENU_EXIT, LT("退出(&X)", "Exit(&X)"));
+
+    m_Menu.AppendMenu(MF_POPUP, (UINT_PTR)popLanguage.Detach(), LT("语言(&L)", "Language(&L)"));
+    m_Menu.AppendMenu(MF_POPUP, (UINT_PTR)popHelp.Detach(), LT("帮助(&H)", "Help(&H)"));
+
+    SetMenu(&m_Menu);
+    DrawMenuBar();
+}
+
+// A dialog does not resize itself when a menu bar is added, so the window is
+// enlarged and every child control is moved down once.
+//
+void CPCANBasicExampleDlg::EnsureMenuSpace()
+{
+    if (m_MenuSpaceAdded)
+        return;
+
+    m_MenuSpaceAdded = true;
+
+    int cyMenu = GetSystemMetrics(SM_CYMENU);
+    CRect rect;
+    GetWindowRect(&rect);
+    SetWindowPos(NULL, 0, 0, rect.Width(), rect.Height() + cyMenu,
+        SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+
+    CWnd* pChild = GetWindow(GW_CHILD);
+    while (pChild != NULL)
+    {
+        CRect childRect;
+        pChild->GetWindowRect(&childRect);
+        ScreenToClient(&childRect);
+        pChild->MoveWindow(childRect.left, childRect.top + cyMenu,
+            childRect.Width(), childRect.Height(), FALSE);
+        pChild = pChild->GetWindow(GW_HWNDNEXT);
+    }
+
+    Invalidate();
+}
+
+// Fills the header of the messages list using the current language
+//
+void CPCANBasicExampleDlg::ApplyListColumns()
+{
+    while (lstMessages.DeleteColumn(0))
+    {
+    }
+
+    lstMessages.InsertColumn(MSG_TYPE, LT("类型", "Type"), LVCFMT_LEFT, 110, 1);
+    lstMessages.InsertColumn(MSG_ID, LT("ID", "ID"), LVCFMT_LEFT, 90, 2);
+    lstMessages.InsertColumn(MSG_LENGTH, LT("长度", "Length"), LVCFMT_LEFT, 50, 3);
+    lstMessages.InsertColumn(MSG_COUNT, LT("计数", "Count"), LVCFMT_LEFT, 49, 5);
+    lstMessages.InsertColumn(MSG_TIME, LT("接收时间", "Rcv Time"), LVCFMT_LEFT, 70, 5);
+    lstMessages.InsertColumn(MSG_DATA, LT("数据", "Data"), LVCFMT_LEFT, 170, 4);
+    lstMessages.SetExtendedStyle(lstMessages.GetExtendedStyle() | LVS_EX_FULLROWSELECT);
+}
+
+// Applies the current language to the caption, the controls, the list header
+// and the menu bar
+//
+void CPCANBasicExampleDlg::ApplyLanguage()
+{
+    SetWindowText(LT("PCAN-Basic 示例", "PCAN-Basic Example"));
+
+    for (int i = 0; i < (int)(sizeof(g_LanguageTexts) / sizeof(g_LanguageTexts[0])); i++)
+    {
+        CWnd* pControl = GetDlgItem(g_LanguageTexts[i].nID);
+        if (pControl != NULL)
+            pControl->SetWindowText(LT(g_LanguageTexts[i].pszChinese, g_LanguageTexts[i].pszEnglish));
+    }
+
+    ApplyListColumns();
+    BuildMenu();
+}
+
+// Selects a language, stores it and refreshes the whole dialog
+//
+void CPCANBasicExampleDlg::SetLanguage(int language)
+{
+    g_nLanguage = language;
+    AfxGetApp()->WriteProfileInt("Settings", "Language", g_nLanguage);
+    ApplyLanguage();
+}
+
+void CPCANBasicExampleDlg::OnLanguageChinese()
+{
+    SetLanguage(LANG_ZH);
+}
+
+void CPCANBasicExampleDlg::OnLanguageEnglish()
+{
+    SetLanguage(LANG_EN);
+}
+
+void CPCANBasicExampleDlg::OnMenuAbout()
+{
+    CAboutDlg about(this);
+    about.DoModal();
+}
+
+void CPCANBasicExampleDlg::OnMenuExit()
+{
+    PostMessage(WM_CLOSE);
 }
 
 // If you add a minimize button to your dialog, you will need the code below

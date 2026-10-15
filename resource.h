@@ -129,6 +129,40 @@
 #define IDC_TXTDATA62                   1152
 #define IDC_TXTDATA63                   1153
 
+// About dialog and its controls
+//
+#define IDD_DIALOG_ABOUT                131
+#define IDC_ABOUT_NAME                  2016
+#define IDC_ABOUT_VERSION               2017
+#define IDC_ABOUT_API                   2018
+#define IDC_ABOUT_COPYRIGHT             2019
+
+// Menu commands (main menu bar of the example dialog)
+//
+#define ID_MENU_LANG_ZH                 32771
+#define ID_MENU_LANG_EN                 32772
+#define ID_MENU_ABOUT                   32773
+#define ID_MENU_EXIT                    32774
+
+// Ids assigned to controls that were IDC_STATIC, so that their
+// text can be changed at runtime (language switch)
+//
+#define IDC_GB_CONNECTION               2001
+#define IDC_GB_FILTER                   2002
+#define IDC_GB_PARAMETERS               2003
+#define IDC_GB_READ                     2004
+#define IDC_GB_WRITE                    2005
+#define IDC_GB_INFORMATION              2006
+#define IDC_LA_HARDWARE                 2007
+#define IDC_LA_ID                       2008
+#define IDC_LA_DLC                      2009
+#define IDC_LA_DATA                     2010
+#define IDC_LA_FROM                     2011
+#define IDC_LA_TO                       2012
+#define IDC_LA_PARAMETER                2013
+#define IDC_LA_ACTIVATION               2014
+#define IDC_LA_LENGTHLABEL              2015
+
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED

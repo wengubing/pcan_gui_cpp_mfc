@@ -336,9 +336,40 @@ protected:
     afx_msg void OnBnClickedButtonreset();
     afx_msg void OnBnClickedChbfcanfd();
 
+    // Menu bar: language switching and about box
+    //
+    afx_msg void OnLanguageChinese();
+    afx_msg void OnLanguageEnglish();
+    afx_msg void OnMenuAbout();
+    afx_msg void OnMenuExit();
+
+    // Creates (or re-creates) the menu bar using the current language
+    //
+    void BuildMenu();
+    // Makes room for the menu bar inside the dialog
+    //
+    void EnsureMenuSpace();
+    // Applies the current language to title, controls, list columns and menu
+    //
+    void ApplyLanguage();
+    // Sets and stores the current language (LANG_ZH / LANG_EN)
+    //
+    void SetLanguage(int language);
+    // Fills the header of the messages list using the current language
+    //
+    void ApplyListColumns();
+
 // Implementation
 protected:
     HICON m_hIcon;
+
+    // Menu bar of this dialog
+    //
+    CMenu m_Menu;
+
+    // True once the dialog was enlarged to show the menu bar
+    //
+    bool m_MenuSpaceAdded;
 
     // Generated message map functions
     virtual BOOL OnInitDialog();
