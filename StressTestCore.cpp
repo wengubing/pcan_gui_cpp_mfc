@@ -12,6 +12,7 @@ CStressTestCore::CStressTestCore()
     m_RingCount = 0;
     m_LastRxId = 0;
     m_HasRx = false;
+    memset(&m_Stats, 0, sizeof(m_Stats));
     Reset();
 }
 
@@ -26,7 +27,13 @@ void CStressTestCore::Reset()
 
     m_Pending.clear();
 
+    // The sequence numbering is kept, otherwise the first frames after a reset
+    // would be skipped by the frame list ("sequence <= last shown")
+    //
+    DWORD nextSequence = m_Stats.nextSequence;
+
     memset(&m_Stats, 0, sizeof(m_Stats));
+    m_Stats.nextSequence = nextSequence;
     m_Stats.minLatencyUs = 0;
     m_Stats.maxLatencyUs = 0;
     m_Stats.startUs = 0;

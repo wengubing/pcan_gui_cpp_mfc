@@ -24,6 +24,11 @@
 //
 extern int g_nLanguage;
 
+// The dialog that owns this page. Only the pointer is needed here, the header
+// of the dialog cannot be included (it includes this file).
+//
+class CPCANBasicExampleDlg;
+
 class CStressTestPage : public CDialog
 {
 public:
@@ -37,9 +42,17 @@ public:
     // Translates the whole page
     //
     void ApplyLanguage();
-    // Stops both threads, safe to call at any time
+    // Stops the sending, safe to call at any time. Frames that are still in
+    // flight are waited for, so the reception can outlive the test.
     //
     void StopTest();
+    // Stops the receive thread and gives the receive queue back to the main page.
+    // "restoreReading" must be false when the channel itself is gone.
+    //
+    void StopReception(bool restoreReading = true);
+    // Tells the page that the user switched to (or away from) the stress test tab
+    //
+    void NotifyPageActive(bool active);
     bool IsRunning();
 
 protected:
@@ -69,6 +82,14 @@ private:
     //
     bool SendOneFrame();
     void ProcessReceivedFrame(DWORD id, const BYTE* data, int length, ULONGLONG rxUs, bool isEcho);
+
+    // Takes the receive queue away from the main page and starts the receive
+    // thread. Nothing happens when the reception is already active.
+    //
+    void StartReception();
+    // The main dialog, NULL as long as the page has no window
+    //
+    CPCANBasicExampleDlg* GetMainDialog();
 
     // Reads the settings out of the controls
     //
@@ -114,18 +135,33 @@ private:
     DWORD m_Counter;
     CRITICAL_SECTION m_csIds;
 
-    // Thread handling
+    // Thread handling. The sending and the receiving have their own stop
+    // events, so that the reception can outlive a test: otherwise the answers
+    // of the last frames would be read by the main page.
     //
     bool m_Running;
     bool m_Paused;
-    HANDLE m_hStopEvent;
+    HANDLE m_hSendStopEvent;
+    HANDLE m_hRecvStopEvent;
     HANDLE m_hPauseEvent;
     HANDLE m_hResumeEvent;
     HANDLE m_hSendThread;
     HANDLE m_hRecvThread;
 
+    // The receive thread is running and this page owns the receive queue
+    //
+    bool m_Receiving;
+    // Latest moment until which the reception has to stay alive after a test
+    // or a single shot, so that the answers are not taken by the main page
+    //
+    ULONGLONG m_ReceptionDeadlineUs;
+
     ULONGLONG m_StartUs;
-    DWORD m_LastShownSequence;
+
+    // Highest sequence number that was already added to the frame list,
+    // -1 means that nothing was shown yet
+    //
+    LONG m_LastShownSequence;
     int m_State;            // 0 idle, 1 running, 2 paused, 3 finished
 
     CListCtrl m_ListFrames;

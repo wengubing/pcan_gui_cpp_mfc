@@ -450,6 +450,12 @@ private:
     //
     HANDLE m_hThread;
 
+    // True while the stress test page owns the receive queue. ReadMessages()
+    // must not touch the queue in that case, otherwise the answers of the
+    // stress test would end up in the list of this dialog.
+    //
+    bool m_ReadingSuspended;
+
     // Handles of non plug and play PCAN-Hardware
     //
     TPCANHandle m_NonPnPHandles[9];

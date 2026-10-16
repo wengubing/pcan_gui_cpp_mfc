@@ -103,14 +103,18 @@ CStressTestPage::CStressTestPage(CWnd* pParent)
 
     m_Running = false;
     m_Paused = false;
-    m_hStopEvent = NULL;
+    m_hSendStopEvent = NULL;
+    m_hRecvStopEvent = NULL;
     m_hPauseEvent = NULL;
     m_hResumeEvent = NULL;
     m_hSendThread = NULL;
     m_hRecvThread = NULL;
 
+    m_Receiving = false;
+    m_ReceptionDeadlineUs = 0;
+
     m_StartUs = 0;
-    m_LastShownSequence = 0;
+    m_LastShownSequence = -1;
     m_State = 0;
 }
 
@@ -195,7 +199,7 @@ void CStressTestPage::ApplyLanguage()
         m_ListFrames.InsertColumn(3, SLT("½ÓÊÕ (us)", "Rx (us)"), LVCFMT_RIGHT, 90);
         m_ListFrames.InsertColumn(4, SLT("ÑÓÊ± (us)", "Latency (us)"), LVCFMT_RIGHT, 85);
         m_ListFrames.InsertColumn(5, SLT("×´Ì¬", "Status"), LVCFMT_LEFT, 100);
-        m_LastShownSequence = 0;
+        m_LastShownSequence = -1;
     }
 
     UpdateControlStates();
@@ -210,13 +214,32 @@ void CStressTestPage::SetChannel(PCANBasicClass* pcan, TPCANHandle handle, bool 
     m_Handle = handle;
     m_IsFD = isFD;
 
-    if (m_Connected && !connected && m_Running)
-        StopTest();
+    bool wasConnected = m_Connected;
 
+    // The flag has to be updated before the threads are stopped, otherwise the
+    // reception would try to give a channel back that does not exist anymore
+    //
     m_Connected = connected;
+
+    if (wasConnected && !connected)
+    {
+        StopTest();
+        StopReception(false);
+    }
 
     if (::IsWindow(GetSafeHwnd()))
         UpdateControlStates();
+}
+
+// The page is a child of the main dialog, the main dialog is the owner of the
+// CAN channel and the only one that may restart its own reading
+//
+CPCANBasicExampleDlg* CStressTestPage::GetMainDialog()
+{
+    if (!::IsWindow(GetSafeHwnd()))
+        return NULL;
+
+    return (CPCANBasicExampleDlg*)GetParent();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -413,13 +436,13 @@ void CStressTestPage::SendThreadFunc()
     LARGE_INTEGER due;
     due.QuadPart = -1;
 
-    while (WaitForSingleObject(m_hStopEvent, 0) != WAIT_OBJECT_0)
+    while (WaitForSingleObject(m_hSendStopEvent, 0) != WAIT_OBJECT_0)
     {
         // Paused: wait until the test is continued or stopped
         //
         if (WaitForSingleObject(m_hPauseEvent, 0) == WAIT_OBJECT_0)
         {
-            HANDLE waitObjects[2] = { m_hStopEvent, m_hResumeEvent };
+            HANDLE waitObjects[2] = { m_hSendStopEvent, m_hResumeEvent };
             WaitForMultipleObjects(2, waitObjects, FALSE, INFINITE);
             continue;
         }
@@ -438,7 +461,7 @@ void CStressTestPage::SendThreadFunc()
         due.QuadPart = -((LONGLONG)m_IntervalMs * 10000);
         SetWaitableTimer(hTimer, &due, 0, NULL, NULL, FALSE);
 
-        HANDLE waitObjects[3] = { m_hStopEvent, m_hPauseEvent, hTimer };
+        HANDLE waitObjects[3] = { m_hSendStopEvent, m_hPauseEvent, hTimer };
         WaitForMultipleObjects(3, waitObjects, FALSE, INFINITE);
     }
 
@@ -460,7 +483,7 @@ void CStressTestPage::RecvThreadFunc()
 {
     timeBeginPeriod(1);
 
-    while (WaitForSingleObject(m_hStopEvent, 0) != WAIT_OBJECT_0)
+    while (WaitForSingleObject(m_hRecvStopEvent, 0) != WAIT_OBJECT_0)
     {
         bool receivedAny = false;
 
@@ -515,7 +538,7 @@ void CStressTestPage::RecvThreadFunc()
         }
 
         if (!receivedAny)
-            WaitForSingleObject(m_hStopEvent, 1);
+            WaitForSingleObject(m_hRecvStopEvent, 1);
     }
 
     timeEndPeriod(1);
@@ -570,10 +593,10 @@ void CStressTestPage::OnBnClickedStart()
 
     m_StartUs = NowUs();
     m_Core.MarkStart(m_StartUs);
-    m_LastShownSequence = 0;
+    m_LastShownSequence = -1;
     m_ListFrames.DeleteAllItems();
 
-    m_hStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    m_hSendStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     m_hPauseEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     m_hResumeEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 
@@ -581,16 +604,13 @@ void CStressTestPage::OnBnClickedStart()
     m_Paused = false;
     m_State = 1;
 
-    // The main page must not read from the same channel while the test is running
+    // This page has to read the answers itself, the main page must not take
+    // them away from the receive queue
     //
-    CWnd* pParent = GetParent();
-    if (pParent != NULL)
-        ((CPCANBasicExampleDlg*)pParent)->SuspendMainReading(true);
+    StartReception();
 
     m_hSendThread = CreateThread(NULL, 0, SendThreadStub, this, 0, NULL);
-    m_hRecvThread = CreateThread(NULL, 0, RecvThreadStub, this, 0, NULL);
 
-    SetTimer(1, 200, NULL);
     UpdateControlStates();
 }
 
@@ -617,7 +637,7 @@ void CStressTestPage::StopTest()
         return;
 
     ResetEvent(m_hResumeEvent);
-    SetEvent(m_hStopEvent);
+    SetEvent(m_hSendStopEvent);
 
     if (m_hSendThread != NULL)
     {
@@ -625,14 +645,8 @@ void CStressTestPage::StopTest()
         CloseHandle(m_hSendThread);
         m_hSendThread = NULL;
     }
-    if (m_hRecvThread != NULL)
-    {
-        WaitForSingleObject(m_hRecvThread, 5000);
-        CloseHandle(m_hRecvThread);
-        m_hRecvThread = NULL;
-    }
 
-    if (m_hStopEvent != NULL) { CloseHandle(m_hStopEvent); m_hStopEvent = NULL; }
+    if (m_hSendStopEvent != NULL) { CloseHandle(m_hSendStopEvent); m_hSendStopEvent = NULL; }
     if (m_hPauseEvent != NULL) { CloseHandle(m_hPauseEvent); m_hPauseEvent = NULL; }
     if (m_hResumeEvent != NULL) { CloseHandle(m_hResumeEvent); m_hResumeEvent = NULL; }
 
@@ -640,15 +654,118 @@ void CStressTestPage::StopTest()
     m_Paused = false;
     m_State = 3;
 
-    KillTimer(1);
     m_Core.SweepTimeouts(NowUs());
-    UpdateStatistics();
 
-    CWnd* pParent = GetParent();
-    if (pParent != NULL)
-        ((CPCANBasicExampleDlg*)pParent)->SuspendMainReading(false);
+    StressStats stats;
+    m_Core.GetStats(stats);
+
+    bool keepReceiving = (stats.pending > 0) && m_Receiving;
+
+    if (keepReceiving)
+    {
+        m_ReceptionDeadlineUs = NowUs() + (ULONGLONG)m_TimeoutMs * 1000 + 200000;
+
+        if (::IsWindow(GetSafeHwnd()))
+            UpdateStatistics();
+    }
+    else
+    {
+        StopReception(true);
+
+        // Nothing is received anymore, the refresh timer is not needed
+        //
+        if (!m_Receiving && ::IsWindow(GetSafeHwnd()))
+            KillTimer(1);
+    }
 
     UpdateControlStates();
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// Reception: only one page may read the receive queue at a time, so this page takes the queue
+// away from the main dialog while it waits for answers
+//
+void CStressTestPage::StartReception()
+{
+    if (m_Receiving)
+        return;
+
+    if (!m_Connected || m_Pcan == NULL)
+        return;
+
+    if (!::IsWindow(GetSafeHwnd()))
+        return;
+
+    m_hRecvStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (m_hRecvStopEvent == NULL)
+        return;
+
+    m_Receiving = true;
+
+    // The main page must not read from the same channel, otherwise it takes
+    // the answers away from this page
+    //
+    CPCANBasicExampleDlg* pMain = GetMainDialog();
+    if (pMain != NULL)
+        pMain->SuspendMainReading(true);
+
+    m_hRecvThread = CreateThread(NULL, 0, RecvThreadStub, this, 0, NULL);
+
+    // Periodic refresh, it also ends the reception when the answers arrived
+    //
+    SetTimer(1, 200, NULL);
+}
+
+void CStressTestPage::StopReception(bool restoreReading)
+{
+    if (!m_Receiving)
+        return;
+
+    SetEvent(m_hRecvStopEvent);
+
+    if (m_hRecvThread != NULL)
+    {
+        WaitForSingleObject(m_hRecvThread, 5000);
+        CloseHandle(m_hRecvThread);
+        m_hRecvThread = NULL;
+    }
+
+    if (m_hRecvStopEvent != NULL) { CloseHandle(m_hRecvStopEvent); m_hRecvStopEvent = NULL; }
+
+    m_Receiving = false;
+    m_ReceptionDeadlineUs = 0;
+
+    // Collect what arrived in the meantime and show it a last time
+    //
+    m_Core.SweepTimeouts(NowUs());
+
+    if (::IsWindow(GetSafeHwnd()))
+    {
+        UpdateStatistics();
+        UpdateFrameList();
+    }
+
+    // The main page owns the channel again. It must only be woken up while the
+    // channel really exists.
+    //
+    if (restoreReading && m_Connected)
+    {
+        CPCANBasicExampleDlg* pMain = GetMainDialog();
+        if (pMain != NULL)
+            pMain->SuspendMainReading(false);
+    }
+
+    if (!m_Running && ::IsWindow(GetSafeHwnd()))
+        KillTimer(1);
+}
+
+void CStressTestPage::NotifyPageActive(bool active)
+{
+    // A running test keeps the channel, otherwise it is given back as soon as
+    // the user leaves this page
+    //
+    if (!active && !m_Running)
+        StopReception(true);
 }
 
 bool CStressTestPage::IsRunning()
@@ -671,14 +788,24 @@ void CStressTestPage::OnBnClickedSendOnce()
     if (m_Core.GetSentCount() == 0)
         m_Core.MarkStart(NowUs());
 
+    // Without its own receive thread the answer of this frame would be read
+    // by the main page, and nothing at all would be received here
+    //
+    StartReception();
+
     SendOneFrame();
+
+    // The reception stays alive until the answer arrived or timed out
+    //
+    m_ReceptionDeadlineUs = NowUs() + (ULONGLONG)m_TimeoutMs * 1000 + 200000;
+
     UpdateStatistics();
 }
 
 void CStressTestPage::OnBnClickedResetStats()
 {
     m_Core.Reset();
-    m_LastShownSequence = 0;
+    m_LastShownSequence = -1;
 
     if (::IsWindow(m_ListFrames.GetSafeHwnd()))
         m_ListFrames.DeleteAllItems();
@@ -695,18 +822,34 @@ void CStressTestPage::OnTimer(UINT_PTR nIDEvent)
 {
     if (nIDEvent == 1)
     {
-        m_Core.SweepTimeouts(NowUs());
+        ULONGLONG now = NowUs();
+
+        m_Core.SweepTimeouts(now);
         UpdateStatistics();
         UpdateFrameList();
 
-        if (m_Running && m_FrameCount > 0 && m_Core.GetSentCount() >= m_FrameCount)
+        if (m_Running)
         {
-            // All requested frames are out, wait a little for the answers, then stop
+            if (m_FrameCount > 0 && m_Core.GetSentCount() >= m_FrameCount)
+            {
+                // All requested frames are out, wait a little for the answers, then stop
+                //
+                StressStats stats;
+                m_Core.GetStats(stats);
+                if (stats.pending == 0)
+                    StopTest();
+            }
+        }
+        else if (m_Receiving)
+        {
+            // Single shot or a finished test: the reception is only kept until
+            // the answers arrived or timed out
             //
             StressStats stats;
             m_Core.GetStats(stats);
-            if (stats.pending == 0)
-                StopTest();
+
+            if (stats.pending == 0 || now >= m_ReceptionDeadlineUs)
+                StopReception(true);
         }
     }
 
@@ -758,10 +901,13 @@ void CStressTestPage::UpdateFrameList()
 
     for (int i = 0; i < count; i++)
     {
-        if (records[i].sequence <= m_LastShownSequence)
+        // -1 means that nothing was shown yet, so the very first record of a
+        // session (sequence 0) is not skipped
+        //
+        if (m_LastShownSequence >= 0 && records[i].sequence <= (DWORD)m_LastShownSequence)
             continue;
 
-        m_LastShownSequence = records[i].sequence;
+        m_LastShownSequence = (LONG)records[i].sequence;
 
         LPCSTR statusText;
         switch (records[i].status)

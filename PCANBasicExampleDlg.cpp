@@ -356,6 +356,7 @@ CPCANBasicExampleDlg::CPCANBasicExampleDlg(CWnd* pParent)
     m_Terminated = false;
     m_tmrRead = 0;
     m_tmrDisplay = 0;
+    m_ReadingSuspended = false;
     m_PcanHandle = PCAN_NONEBUS;
     m_Baudrate = PCAN_BAUD_500K;
     m_HwType = PCAN_TYPE_ISA;
@@ -939,8 +940,16 @@ void CPCANBasicExampleDlg::ShowPage(int index)
 {
     m_CurrentPage = index;
 
-    if (::IsWindow(m_StressPage.GetSafeHwnd()))
+    bool stressWindow = ::IsWindow(m_StressPage.GetSafeHwnd()) != FALSE;
+
+    if (stressWindow)
         m_StressPage.ShowWindow((index == 1) ? SW_SHOW : SW_HIDE);
+
+    // Leaving the stress test page gives the receive queue back to this dialog,
+    // a running test keeps it
+    //
+    if (stressWindow)
+        m_StressPage.NotifyPageActive(index == 1);
 
     CWnd* pChild = GetWindow(GW_CHILD);
     while (pChild != NULL)
@@ -976,11 +985,20 @@ void CPCANBasicExampleDlg::OnTcnSelchangeTabs(NMHDR *pNMHDR, LRESULT *pResult)
 //
 void CPCANBasicExampleDlg::SuspendMainReading(bool suspend)
 {
+    // The stress test page is the only consumer of the receive queue while it
+    // owns the channel. The flag is set even before the connect guard so that
+    // a disconnects-clears-restores sequence can never leave it stuck "true".
+    //
+    if (!suspend)
+        m_ReadingSuspended = false;
+
     if (!btnRelease.IsWindowEnabled())
         return;
 
     if (suspend)
     {
+        m_ReadingSuspended = true;
+
         SetTimerRead(false);
 
         if (m_hThread != NULL)
@@ -3249,9 +3267,11 @@ void CPCANBasicExampleDlg::OnBnClickedButtonparamget()
 
 void CPCANBasicExampleDlg::OnClose()
 {
-    // Stop the stress test before anything else is released
+    // Stop the stress test and its receive thread before anything else is
+    // released, otherwise the receive thread would use the released API
     //
     m_StressPage.StopTest();
+    m_StressPage.StopReception(false);
 
     // Release Hardware if need be
     //
@@ -3667,6 +3687,9 @@ void CPCANBasicExampleDlg::ProcessMessage(TPCANMsg theMsg, TPCANTimestamp itsTim
 
 TPCANStatus CPCANBasicExampleDlg::ReadMessageFD()
 {
+    if (m_ReadingSuspended)
+        return PCAN_ERROR_QRCVEMPTY;
+
     TPCANMsgFD CANMsg;
     TPCANTimestampFD CANTimeStamp;
     TPCANStatus stsResult;
@@ -3684,6 +3707,9 @@ TPCANStatus CPCANBasicExampleDlg::ReadMessageFD()
 
 TPCANStatus CPCANBasicExampleDlg::ReadMessage()
 {
+    if (m_ReadingSuspended)
+        return PCAN_ERROR_QRCVEMPTY;
+
     TPCANMsg CANMsg;
     TPCANTimestamp CANTimeStamp;
     TPCANStatus stsResult;
@@ -3701,6 +3727,12 @@ TPCANStatus CPCANBasicExampleDlg::ReadMessage()
 
 void CPCANBasicExampleDlg::ReadMessages()
 {
+    // The stress test page owns the receive queue, anything we read here would
+    // be stolen from the test
+    //
+    if (m_ReadingSuspended)
+        return;
+
     TPCANStatus stsResult;
 
     // We read at least one time the queue looking for messages.
@@ -3996,6 +4028,11 @@ CString CPCANBasicExampleDlg::GetFormatedError(TPCANStatus error)
 
 void CPCANBasicExampleDlg::SetConnectionStatus(bool bConnected)
 {
+    // The channel is gone, the receive queue cannot be protected anymore
+    //
+    if (!bConnected)
+        m_ReadingSuspended = false;
+
     // Tell the stress test page about the new channel state
     //
     if (::IsWindow(m_StressPage.GetSafeHwnd()))
