@@ -349,6 +349,9 @@ public:
     //
     afx_msg void OnTcnSelchangeTabs(NMHDR *pNMHDR, LRESULT *pResult);
     void ShowPage(int index);
+    // Shows/hides the connection controls that depend on the CAN-FD mode
+    //
+    void UpdateConnectionModeVisibility();
     // Stops (or restores) the reading of the manual page, so that the stress test
     // owns the channel while it is running
     //

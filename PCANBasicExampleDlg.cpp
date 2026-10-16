@@ -889,7 +889,14 @@ void CPCANBasicExampleDlg::EnsureMenuSpace()
 
     CRect rect;
     GetWindowRect(&rect);
-    SetWindowPos(NULL, 0, 0, rect.Width(), rect.Height() + cyMenu + cyTab,
+    // The menu bar (cyMenu) is part of the non-client area and consumes part
+    // of this growth once it is created, the tab strip (cyTab) is placed into
+    // the client area. The children below are shifted down by cyMenu + cyTab,
+    // so the window has to grow by the same amount PLUS the cyMenu that the
+    // menu will take away from the client area again, otherwise the bottom
+    // row of controls gets clipped.
+    //
+    SetWindowPos(NULL, 0, 0, rect.Width(), rect.Height() + 2 * cyMenu + cyTab,
         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 
     CWnd* pChild = GetWindow(GW_CHILD);
@@ -943,6 +950,14 @@ void CPCANBasicExampleDlg::ShowPage(int index)
 
         pChild = pChild->GetWindow(GW_HWNDNEXT);
     }
+
+    // Showing every child unconditionally would also show controls that are
+    // hidden in the dialog template or by the CAN-FD mode (FD bitrate editor,
+    // "Bit rate" label, FD/BRS checkboxes). Re-apply the visibility that
+    // depends on the connection mode.
+    //
+    if (index == 0)
+        UpdateConnectionModeVisibility();
 
     if (::IsWindow(m_Tabs.GetSafeHwnd()))
         m_Tabs.SetCurSel(index);
@@ -4090,6 +4105,15 @@ void CPCANBasicExampleDlg::OnBnClickedChbfcanfd()
 {
     m_IsFD = chbCanFD.GetCheck() > 0;
 
+    UpdateConnectionModeVisibility();
+}
+
+// Shows/hides the connection controls according to the CAN-FD mode: classic
+// mode uses the baudrate/hwtype/I-O/interrupt combos, FD mode uses the bitrate
+// editor and the FD/BRS checkboxes of the write area instead.
+//
+void CPCANBasicExampleDlg::UpdateConnectionModeVisibility()
+{
     cbbBaudrates.ShowWindow(!m_IsFD ? SW_SHOW : SW_HIDE);
     cbbHwsType.ShowWindow(!m_IsFD ? SW_SHOW : SW_HIDE);
     cbbIO.ShowWindow(!m_IsFD ? SW_SHOW : SW_HIDE);
