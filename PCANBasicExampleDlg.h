@@ -9,6 +9,7 @@
 #include "afxcmn.h"
 #include <Math.h>
 #include "PCANBasicClass.h"
+#include "StressTestPage.h"
 
 
 using namespace std;
@@ -343,6 +344,16 @@ protected:
     afx_msg void OnMenuAbout();
     afx_msg void OnMenuExit();
 
+public:
+    // Tab control: switches between the manual page and the stress test page
+    //
+    afx_msg void OnTcnSelchangeTabs(NMHDR *pNMHDR, LRESULT *pResult);
+    void ShowPage(int index);
+    // Stops (or restores) the reading of the manual page, so that the stress test
+    // owns the channel while it is running
+    //
+    void SuspendMainReading(bool suspend);
+
     // Creates (or re-creates) the menu bar using the current language
     //
     void BuildMenu();
@@ -370,6 +381,12 @@ protected:
     // True once the dialog was enlarged to show the menu bar
     //
     bool m_MenuSpaceAdded;
+
+    // Tab control and the stress test page
+    //
+    CTabCtrl m_Tabs;
+    CStressTestPage m_StressPage;
+    int m_CurrentPage;
 
     // Generated message map functions
     virtual BOOL OnInitDialog();

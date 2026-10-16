@@ -5,6 +5,7 @@
 #include "PCANBasicExample.h"
 #include "PCANBasicExampleDlg.h"
 #include "PCANBasicClass.h"
+#include "StressTestCore.h"
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -94,6 +95,101 @@ static CString SelfTestStatusText(PCANBasicClass* pcan, TPCANStatus status)
     return result;
 }
 
+// Checks the measurement engine of the stress test page with synthetic frames.
+// It needs no hardware, so it can be used at any time:
+//      PCANBasicExample.exe --selftest --stresssim
+//
+// 1000 frames are "sent", 999 come back with a delay between 100 us and 1100 us,
+// one frame is never answered, one is answered twice, one is returned with a
+// modified payload and two frames swap their order.
+//
+static int SelfTestStressEngine()
+{
+    const int frames = 1000;
+    const ULONGLONG base = 1000000;     // 1 s
+    const ULONGLONG spacing = 1000;     // one frame per millisecond
+    const int lostIndex = 500;
+    const int dupIndex = 700;
+    const int badIndex = 800;
+    const int swapIndex = 900;
+
+    CStressTestCore core;
+    core.Reset();
+    core.SetTimeoutUs(1000000);
+    core.SetCheckEcho(true);
+
+    SelfTestPrint("=== stress test engine simulation ===");
+    SelfTestPrint("frames        : %d (1 lost, 1 duplicate, 1 data error, 2 swapped)", frames);
+
+    for (int i = 0; i < frames; i++)
+    {
+        DWORD id = (DWORD)i;
+        ULONGLONG tx = base + (ULONGLONG)i * spacing;
+        BYTE data[8];
+        memcpy(data, &tx, sizeof(tx));
+        core.OnFrameSent(id, tx, data, 8);
+    }
+
+    for (int i = 0; i < frames; i++)
+    {
+        if (i == lostIndex)
+            continue;
+
+        int order = i;
+        if (i == swapIndex)
+            order = swapIndex + 1;
+        else if (i == swapIndex + 1)
+            order = swapIndex;
+
+        DWORD id = (DWORD)order;
+        ULONGLONG tx = base + (ULONGLONG)order * spacing;
+        ULONGLONG latency = 100 + (ULONGLONG)(order % 11) * 100;
+        ULONGLONG rx = tx + latency;
+
+        BYTE data[8];
+        memcpy(data, &tx, sizeof(tx));
+        if (order == badIndex)
+            data[0] ^= 0xFF;
+
+        core.OnFrameReceived(id, data, 8, rx, false);
+
+        if (order == dupIndex)
+            core.OnFrameReceived(id, data, 8, rx + 5, false);
+    }
+
+    core.SweepTimeouts(base + (ULONGLONG)frames * spacing + 2000000);
+
+    StressStats stats;
+    core.GetStats(stats);
+
+    SelfTestPrint("sent          : %I64u (expected 1000)", stats.sent);
+    SelfTestPrint("received      : %I64u (expected 999)", stats.received);
+    SelfTestPrint("lost          : %I64u (expected 1)", stats.lost);
+    SelfTestPrint("duplicates    : %I64u (expected 1)", stats.duplicates);
+    SelfTestPrint("data errors   : %I64u (expected 1)", stats.dataErrors);
+    SelfTestPrint("out of order  : %I64u (expected 1)", stats.outOfOrder);
+    SelfTestPrint("in flight     : %u (expected 0)", stats.pending);
+    SelfTestPrint("min latency   : %.1f us (expected 100)", stats.minLatencyUs);
+    SelfTestPrint("max latency   : %.1f us (expected 1100)", stats.maxLatencyUs);
+    SelfTestPrint("avg latency   : %.1f us (expected 600)", stats.averageUs);
+    SelfTestPrint("jitter        : %.1f us", stats.jitterUs);
+
+    bool ok = true;
+    ok = ok && (stats.sent == 1000);
+    ok = ok && (stats.received == 999);
+    ok = ok && (stats.lost == 1);
+    ok = ok && (stats.duplicates == 1);
+    ok = ok && (stats.dataErrors == 1);
+    ok = ok && (stats.outOfOrder == 1);
+    ok = ok && (stats.pending == 0);
+    ok = ok && (stats.minLatencyUs > 99.0) && (stats.minLatencyUs < 101.0);
+    ok = ok && (stats.maxLatencyUs > 1099.0) && (stats.maxLatencyUs < 1101.0);
+    ok = ok && (stats.averageUs > 560.0) && (stats.averageUs < 640.0);
+
+    SelfTestPrint("=== RESULT: %s (exit code %d) ===", ok ? "PASS" : "FAIL", ok ? 0 : 6);
+    return ok ? 0 : 6;
+}
+
 // Executes the whole test sequence without any user interaction
 //
 int CPCANBasicExampleApp::RunSelfTest()
@@ -110,6 +206,19 @@ int CPCANBasicExampleApp::RunSelfTest()
     SelfTestPrint("=== PCAN-Basic headless self-test ===");
     SelfTestPrint("command line : %s", (LPCSTR)commandLine);
     SelfTestPrint("read window  : %u ms", readWindow);
+
+    // "--stresssim" verifies the stress test engine, it needs no hardware
+    //
+    if (commandLine.Find("--stresssim") >= 0)
+    {
+        int simResult = SelfTestStressEngine();
+        if (g_pSelfTestLog != NULL)
+        {
+            fclose(g_pSelfTestLog);
+            g_pSelfTestLog = NULL;
+        }
+        return simResult;
+    }
 
     // 1) DLL / API
     //
@@ -379,7 +488,8 @@ BOOL CPCANBasicExampleApp::InitInstance()
 {
     // Headless mode: "--selftest" runs the PCAN-Basic smoke test without any GUI
     //
-    if (CString(GetCommandLineA()).Find("--selftest") >= 0)
+    CString startCommandLine(GetCommandLineA());
+    if (startCommandLine.Find("--selftest") >= 0 || startCommandLine.Find("--stresssim") >= 0)
     {
         m_SelfTestMode = true;
         m_SelfTestResult = RunSelfTest();

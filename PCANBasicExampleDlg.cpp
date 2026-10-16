@@ -348,6 +348,19 @@ CPCANBasicExampleDlg::CPCANBasicExampleDlg(CWnd* pParent)
 {
     m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
     m_MenuSpaceAdded = false;
+
+    // Members that were left uninitialized by the original sample. m_hThread is
+    // checked before it is used, so it must never contain a random value.
+    //
+    m_hThread = NULL;
+    m_Terminated = false;
+    m_tmrRead = 0;
+    m_tmrDisplay = 0;
+    m_PcanHandle = PCAN_NONEBUS;
+    m_Baudrate = PCAN_BAUD_500K;
+    m_HwType = PCAN_TYPE_ISA;
+    m_IsFD = false;
+    m_CurrentPage = 0;
 }
 
 void CPCANBasicExampleDlg::DoDataExchange(CDataExchange* pDX)
@@ -651,6 +664,7 @@ ON_WM_PAINT()
     ON_COMMAND(ID_MENU_LANG_EN, &CPCANBasicExampleDlg::OnLanguageEnglish)
     ON_COMMAND(ID_MENU_ABOUT, &CPCANBasicExampleDlg::OnMenuAbout)
     ON_COMMAND(ID_MENU_EXIT, &CPCANBasicExampleDlg::OnMenuExit)
+    ON_NOTIFY(TCN_SELCHANGE, IDC_TABS, &CPCANBasicExampleDlg::OnTcnSelchangeTabs)
     END_MESSAGE_MAP()
 
 
@@ -662,8 +676,9 @@ ON_WM_PAINT()
 
 // Currently selected language. It is stored in the registry so that the
 // example starts with the language that was used the last time.
+// (global, because the stress test page uses it as well)
 //
-static int g_nLanguage = LANG_ZH;
+int g_nLanguage = LANG_ZH;
 
 // Returns the text that corresponds to the current language
 //
@@ -811,12 +826,13 @@ BOOL CPCANBasicExampleDlg::OnInitDialog()
     // Extra initialization here
     InitializeControls();
 
-    // Restore the language of the last session, create the menu bar and
-    // translate the whole dialog
+    // Restore the language of the last session, create the menu bar and the
+    // tab control and translate the whole dialog
     //
     g_nLanguage = AfxGetApp()->GetProfileInt("Settings", "Language", LANG_ZH);
-    ApplyLanguage();
     EnsureMenuSpace();
+    ApplyLanguage();
+    ShowPage(0);
 
     return TRUE;  // return TRUE  unless you set the focus to a control
 }
@@ -858,7 +874,8 @@ void CPCANBasicExampleDlg::BuildMenu()
 }
 
 // A dialog does not resize itself when a menu bar is added, so the window is
-// enlarged and every child control is moved down once.
+// enlarged and every child control is moved down once. The place that becomes
+// free on top is used by the tab control.
 //
 void CPCANBasicExampleDlg::EnsureMenuSpace()
 {
@@ -868,9 +885,11 @@ void CPCANBasicExampleDlg::EnsureMenuSpace()
     m_MenuSpaceAdded = true;
 
     int cyMenu = GetSystemMetrics(SM_CYMENU);
+    int cyTab = 24;
+
     CRect rect;
     GetWindowRect(&rect);
-    SetWindowPos(NULL, 0, 0, rect.Width(), rect.Height() + cyMenu,
+    SetWindowPos(NULL, 0, 0, rect.Width(), rect.Height() + cyMenu + cyTab,
         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 
     CWnd* pChild = GetWindow(GW_CHILD);
@@ -879,12 +898,89 @@ void CPCANBasicExampleDlg::EnsureMenuSpace()
         CRect childRect;
         pChild->GetWindowRect(&childRect);
         ScreenToClient(&childRect);
-        pChild->MoveWindow(childRect.left, childRect.top + cyMenu,
+        pChild->MoveWindow(childRect.left, childRect.top + cyMenu + cyTab,
             childRect.Width(), childRect.Height(), FALSE);
         pChild = pChild->GetWindow(GW_HWNDNEXT);
     }
 
+    CRect client;
+    GetClientRect(&client);
+
+    // Tab control below the menu bar
+    //
+    m_Tabs.Create(WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | TCS_TABS | TCS_SINGLELINE | TCS_RAGGEDRIGHT,
+        CRect(4, cyMenu, client.Width() - 4, cyMenu + cyTab), this, IDC_TABS);
+    m_Tabs.SetFont(GetFont());
+    m_Tabs.InsertItem(0, LT("连接与收发", "Connection"));
+    m_Tabs.InsertItem(1, LT("自动收发压力测试", "Stress Test"));
+
+    // The stress test page covers exactly the area of the first page
+    //
+    CRect pageRect(7, 2, 7 + 466, 2 + 360);
+    MapDialogRect(&pageRect);
+    pageRect.OffsetRect(0, cyMenu + cyTab);
+
+    m_StressPage.Create(IDD_PAGE_STRESS, this);
+    m_StressPage.MoveWindow(&pageRect);
+
     Invalidate();
+}
+
+// Shows one of the two pages: index 0 = manual send/receive, 1 = stress test
+//
+void CPCANBasicExampleDlg::ShowPage(int index)
+{
+    m_CurrentPage = index;
+
+    if (::IsWindow(m_StressPage.GetSafeHwnd()))
+        m_StressPage.ShowWindow((index == 1) ? SW_SHOW : SW_HIDE);
+
+    CWnd* pChild = GetWindow(GW_CHILD);
+    while (pChild != NULL)
+    {
+        if (pChild->m_hWnd != m_Tabs.m_hWnd && pChild->m_hWnd != m_StressPage.m_hWnd)
+            pChild->ShowWindow((index == 0) ? SW_SHOW : SW_HIDE);
+
+        pChild = pChild->GetWindow(GW_HWNDNEXT);
+    }
+
+    if (::IsWindow(m_Tabs.GetSafeHwnd()))
+        m_Tabs.SetCurSel(index);
+}
+
+void CPCANBasicExampleDlg::OnTcnSelchangeTabs(NMHDR *pNMHDR, LRESULT *pResult)
+{
+    ShowPage(m_Tabs.GetCurSel());
+
+    if (pResult != NULL)
+        *pResult = 0;
+}
+
+// While the stress test is running it owns the channel, so the reading of the
+// first page has to be stopped and restored afterwards.
+//
+void CPCANBasicExampleDlg::SuspendMainReading(bool suspend)
+{
+    if (!btnRelease.IsWindowEnabled())
+        return;
+
+    if (suspend)
+    {
+        SetTimerRead(false);
+
+        if (m_hThread != NULL)
+        {
+            m_Terminated = true;
+            WaitForSingleObject(m_hThread, 5000);
+            CloseHandle(m_hThread);
+            m_hThread = NULL;
+        }
+    }
+    else
+    {
+        m_Terminated = false;
+        ReadingModeChanged();
+    }
 }
 
 // Fills the header of the messages list using the current language
@@ -917,6 +1013,26 @@ void CPCANBasicExampleDlg::ApplyLanguage()
         if (pControl != NULL)
             pControl->SetWindowText(LT(g_LanguageTexts[i].pszChinese, g_LanguageTexts[i].pszEnglish));
     }
+
+    // Labels of the tab control
+    //
+    if (::IsWindow(m_Tabs.GetSafeHwnd()))
+    {
+        TCITEM item;
+        memset(&item, 0, sizeof(item));
+        item.mask = TCIF_TEXT;
+
+        item.pszText = (LPTSTR)LT("连接与收发", "Connection");
+        m_Tabs.SetItem(0, &item);
+
+        item.pszText = (LPTSTR)LT("自动收发压力测试", "Stress Test");
+        m_Tabs.SetItem(1, &item);
+    }
+
+    // The stress test page translates itself
+    //
+    if (::IsWindow(m_StressPage.GetSafeHwnd()))
+        m_StressPage.ApplyLanguage();
 
     ApplyListColumns();
     BuildMenu();
@@ -3118,6 +3234,10 @@ void CPCANBasicExampleDlg::OnBnClickedButtonparamget()
 
 void CPCANBasicExampleDlg::OnClose()
 {
+    // Stop the stress test before anything else is released
+    //
+    m_StressPage.StopTest();
+
     // Release Hardware if need be
     //
     if(btnRelease.IsWindowEnabled())
@@ -3861,6 +3981,11 @@ CString CPCANBasicExampleDlg::GetFormatedError(TPCANStatus error)
 
 void CPCANBasicExampleDlg::SetConnectionStatus(bool bConnected)
 {
+    // Tell the stress test page about the new channel state
+    //
+    if (::IsWindow(m_StressPage.GetSafeHwnd()))
+        m_StressPage.SetChannel(m_objPCANBasic, m_PcanHandle, m_IsFD, bConnected);
+
     // Buttons
     //
     btnInit.EnableWindow(!bConnected);

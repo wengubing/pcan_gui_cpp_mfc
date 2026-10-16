@@ -144,6 +144,79 @@
 #define ID_MENU_ABOUT                   32773
 #define ID_MENU_EXIT                    32774
 
+// Tab control of the main dialog and the stress-test page
+//
+#define IDC_TABS                        3000
+#define IDD_PAGE_STRESS                 132
+#define IDC_GB_SENDSET                  3001
+#define IDC_GB_STATS                    3002
+#define IDC_GB_FRAMES                   3003
+#define IDC_LA_IDSTART                  3004
+#define IDC_EDIT_IDSTART                3005
+#define IDC_LA_IDSTEP                   3006
+#define IDC_EDIT_IDSTEP                 3007
+#define IDC_LA_STRESSLENGTH             3069
+#define IDC_EDIT_DLC                    3009
+#define IDC_SPIN_DLC                    3010
+#define IDC_LA_PAYLOAD                  3011
+#define IDC_RADIO_PAY_TS                3012
+#define IDC_RADIO_PAY_INC               3013
+#define IDC_RADIO_PAY_FIX               3014
+#define IDC_EDIT_FIXVAL                 3015
+#define IDC_LA_INTERVAL                 3016
+#define IDC_EDIT_INTERVAL               3017
+#define IDC_LA_COUNT                    3018
+#define IDC_EDIT_COUNT                  3019
+#define IDC_LA_TIMEOUT                  3020
+#define IDC_EDIT_TIMEOUT                3021
+#define IDC_RADIO_STD                   3022
+#define IDC_RADIO_EXT                   3023
+#define IDC_CHK_LOGDETAIL               3024
+#define IDC_CHK_ECHOCHECK               3025
+#define IDC_BTN_START                   3026
+#define IDC_BTN_PAUSE                   3027
+#define IDC_BTN_STOP                    3028
+#define IDC_BTN_SENDONCE                3029
+#define IDC_BTN_RESETSTATS              3030
+#define IDC_BTN_EXPORT                  3031
+#define IDC_LA_TX                       3032
+#define IDC_EDIT_TX                     3033
+#define IDC_LA_RX                       3034
+#define IDC_EDIT_RX                     3035
+#define IDC_LA_LOST                     3036
+#define IDC_EDIT_LOST                   3037
+#define IDC_LA_TIMEOUTC                 3038
+#define IDC_EDIT_TIMEOUTC               3039
+#define IDC_LA_OOO                      3040
+#define IDC_EDIT_OOO                    3041
+#define IDC_LA_DUP                      3042
+#define IDC_EDIT_DUP                    3043
+#define IDC_LA_DATAERR                  3044
+#define IDC_EDIT_DATAERR                3045
+#define IDC_LA_SENDERR                  3046
+#define IDC_EDIT_SENDERR                3047
+#define IDC_LA_MIN                      3048
+#define IDC_EDIT_MIN                    3049
+#define IDC_LA_MAX                      3050
+#define IDC_EDIT_MAX                    3051
+#define IDC_LA_AVG                      3052
+#define IDC_EDIT_AVG                    3053
+#define IDC_LA_LAST                     3054
+#define IDC_EDIT_LAST                   3055
+#define IDC_LA_JITTER                   3056
+#define IDC_EDIT_JITTER                 3057
+#define IDC_LA_RATE                     3058
+#define IDC_EDIT_RATE                   3059
+#define IDC_LA_ELAPSED                  3060
+#define IDC_EDIT_ELAPSED                3061
+#define IDC_LA_PENDING                  3062
+#define IDC_EDIT_PENDING                3063
+#define IDC_LIST_FRAMES                 3064
+#define IDC_EDIT_STATE                  3065
+#define IDC_LA_STATE                    3066
+#define IDC_LA_ECHO                     3067
+#define IDC_EDIT_ECHO                   3068
+
 // Ids assigned to controls that were IDC_STATIC, so that their
 // text can be changed at runtime (language switch)
 //
